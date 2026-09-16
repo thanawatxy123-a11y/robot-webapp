@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สมัครบัญชีใหม่ - Robot Control</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .register-box { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 100%; max-width: 350px; text-align: center; }
+        .register-box h2 { margin-top: 0; color: #333; margin-bottom: 25px; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background-color: #27ae60; color: white; border: none; border-radius: 5px; font-size: 1rem; cursor: pointer; transition: 0.3s; margin-top: 10px; font-weight: bold; }
+        button:hover { background-color: #219653; }
+        .btn-secondary { background-color: #3498db; }
+        .btn-secondary:hover { background-color: #2980b9; }
+        #message { margin-top: 15px; font-size: 0.9rem; font-weight: bold; }
+        .extra-links { margin-top: 20px; font-size: 0.9rem; }
+        .extra-links a { color: #3498db; text-decoration: none; transition: 0.2s; }
+        .extra-links a:hover { color: #2980b9; text-decoration: underline; }
+        #step2 { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="register-box">
+    <h2>📝 สมัครบัญชีใหม่</h2>
+    
+    <!-- สเต็ปที่ 1: ตั้งชื่อ, รหัสผ่าน, ใส่อีเมล -->
+    <div id="step1">
+        <input type="text" id="username" placeholder="ตั้งชื่อผู้ใช้งาน" required>
+        <input type="email" id="email" placeholder="อีเมลของคุณ (เพื่อรับ OTP)" required>
+        <input type="password" id="password" placeholder="ตั้งรหัสผ่าน" required>
+        <input type="password" id="confirm_password" placeholder="ยืนยันรหัสผ่านอีกครั้ง" required>
+        <button type="button" class="btn-secondary" onclick="requestRegisterOTP()">📧 ส่ง OTP ไปที่อีเมล</button>
+    </div>
+
+    <!-- สเต็ปที่ 2: กรอกรหัส OTP ยืนยัน -->
+    <div id="step2">
+        <input type="text" id="otp" placeholder="กรอกรหัส OTP 6 หลัก" maxlength="6" required>
+        <button type="button" onclick="confirmRegistration()">✅ ยืนยันการสมัคร</button>
+    </div>
+
+    <div id="message"></div>
+        
+    <div class="extra-links">
+        <a href="/login.html">⬅️ กลับไปหน้าล็อกอิน</a>
+    </div>
+</div>
+
+<script>
+    const msgBox = document.getElementById('message');
+
+    // ฟังก์ชัน 1: ขอรหัส OTP สมัครสมาชิก
+    async function requestRegisterOTP() {
+        const username = document.getElementById('username').value;
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const confirm_password = document.getElementById('confirm_password').value;
+
+        if (!username || !email || !password) {
+            msgBox.style.color = "red";
+            msgBox.innerText = "กรุณากรอกข้อมูลให้ครบทุกช่องครับ";
+            return;
+        }
+        if (password !== confirm_password) {
+            msgBox.style.color = "red";
+            msgBox.innerText = "รหัสผ่านทั้งสองช่องไม่ตรงกันครับ!";
+            return;
+        }
+
+        msgBox.style.color = "#d35400";
+        msgBox.innerText = "⏳ กำลังส่งรหัส OTP ไปยังอีเมลของคุณ...";
+
+        try {
+            const res = await fetch('/api/request-register-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                msgBox.style.color = "green";
+                msgBox.innerText = "ส่งรหัส OTP สำเร็จ! กรุณาเช็กในกล่องข้อความอีเมลครับ";
+                document.getElementById('step1').style.display = 'none';
+                document.getElementById('step2').style.display = 'block';
+            } else {
+                msgBox.style.color = "red";
+                msgBox.innerText = data.error;
+            }
+        } catch (err) {
+            msgBox.style.color = "red";
+            msgBox.innerText = "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้";
+        }
+    }
+
+    // ฟังก์ชัน 2: ยืนยัน OTP และส่งข้อมูลสมัครบัญชี
+    async function confirmRegistration() {
+        const username = document.getElementById('username').value;
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const otp = document.getElementById('otp').value;
+
+        if (!otp) {
+            msgBox.style.color = "red";
+            msgBox.innerText = "กรุณากรอกรหัส OTP ครับ";
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, password, otp })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                msgBox.style.color = "green";
+                msgBox.innerText = "🎉 สมัครบัญชีสำเร็จ! กำลังพากลับไปหน้าล็อกอิน...";
+                setTimeout(() => window.location.href = '/login.html', 2000);
+            } else {
+                msgBox.style.color = "red";
+                msgBox.innerText = data.error;
+            }
+        } catch (err) {
+            msgBox.style.color = "red";
+            msgBox.innerText = "เกิดข้อผิดพลาดในการส่งข้อมูล";
+        }
+    }
+</script>
+</body>
+</html>
