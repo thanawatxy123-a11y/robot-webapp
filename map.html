@@ -168,7 +168,9 @@
 
         function connectToRobot() {
             document.getElementById('ros-status-text').innerText = 'กำลังเชื่อมต่อ...';
-            ros.connect('ws://localhost:9090'); 
+            // เปลี่ยนเป็นลิงก์ Ngrok ของเรา และต้องใช้ wss:// (มีตัว s) เพื่อความปลอดภัย
+            ros.connect('wss://unissued-tactful-encounter.ngrok-free.dev'); 
+        }
         }
 
         // ---------------------------------------------------------
