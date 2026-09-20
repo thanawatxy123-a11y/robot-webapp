@@ -1,357 +1,317 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Robot Dashboard & Map Control</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f0f2f5; display: flex; height: 100vh; }
-        
-        /* แถบเมนูด้านซ้าย */
-        .sidebar { width: 250px; background: #2c3e50; color: white; padding: 20px; display: flex; flex-direction: column; box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
-        .sidebar h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 10px; }
-        .status-box { background: #34495e; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; }
-        .status-indicator { display: inline-block; width: 10px; height: 10px; background: #dc3545; border-radius: 50%; margin-right: 5px; }
-        
-        /* ปุ่มควบคุมต่างๆ */
-        .btn { padding: 12px; margin-bottom: 10px; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; font-size: 1rem; transition: 0.2s; }
-        .btn-connect { background: #27ae60; }
-        .btn-connect:hover { background: #219653; }
-        .btn-stop { background: #e74c3c; margin-top: auto; }
-        .btn-stop:hover { background: #c0392b; }
-        
-        /* พื้นที่แผนที่ตรงกลาง */
-        .main-content { flex: 1; padding: 20px; display: flex; flex-direction: column; }
-        .main-content h2 { margin-top: 0; color: #333; }
-        
-        /* กรอบสำหรับแสดงแผนที่ ROS 2 */
-        .map-container { 
-            flex: 1; 
-            background: #ffffff; 
-            border: 2px dashed #bdc3c7; 
-            border-radius: 10px; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            position: relative; 
-            overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
-        .map-placeholder-text { color: #7f8c8d; font-size: 1.2rem; text-align: center; }
-        
-        /* แผงควบคุมคิวงาน (Task Queue) */
-        .queue-panel {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(255, 255, 255, 0.95);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-            width: 250px;
-            font-family: sans-serif;
-            z-index: 10; /* ดันแผงให้อยู่บนสุดเสมอ */
-        }
-        .queue-panel h3 { margin-top: 0; font-size: 1.1rem; color: #2c3e50; }
-        .queue-list { list-style: none; padding: 0; margin-bottom: 15px; }
-        .queue-list li {
-            background: #ecf0f1; margin-bottom: 5px; padding: 8px;
-            border-radius: 4px; font-size: 0.9rem;
-            display: flex; justify-content: space-between;
-        }
-        .btn-start { background: #27ae60; color: white; width: 100%; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 5px; }
-        .btn-start:hover { background: #2ecc71; }
-        .btn-clear { background: #e74c3c; color: white; width: 100%; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .btn-clear:hover { background: #c0392b; }
-        
-        /* รูปแบบของจุดมาร์คในแผนที่ */
-        .map-marker {
-            position: absolute;
-            width: 14px;
-            height: 14px;
-            background-color: #e74c3c;
-            border: 2px solid white;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 1000;
-            box-shadow: 0 0 5px rgba(0,0,0,0.5);
-            pointer-events: none;
-        }
-    </style>
+<!DOCTYPE html> <!-- ประกาศให้เบราว์เซอร์รู้ว่าไฟล์นี้คือเอกสาร HTML5 -->
+<html lang="th"> <!-- เปิดแท็กหลักของเว็บ และตั้งค่าภาษาให้เป็นภาษาไทย (th) -->
+<head> <!-- ส่วนหัวของเว็บ ใช้เก็บการตั้งค่าต่างๆ ที่ไม่แสดงบนหน้าจอตรงๆ -->
+    <meta charset="UTF-8"> <!-- ตั้งค่าการเข้ารหัสภาษา (UTF-8) ให้เว็บอ่านภาษาไทยได้ ไม่เป็นภาษาต่างดาว -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <!-- ตั้งค่าให้เว็บปรับขนาดพอดีกับหน้าจอมือถือและแท็บเล็ต (Responsive) -->
+    <title>Robot Dashboard & Map Control</title> <!-- กำหนดข้อความที่จะแสดงบนแถบชื่อแท็บ (Tab) ของเบราว์เซอร์ -->
     
-    <!-- ไลบรารีสำหรับเชื่อมต่อ ROS 2 และวาดแผนที่ -->
-    <script src="https://cdn.jsdelivr.net/npm/eventemitter2@6/lib/eventemitter2.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
-    <script src="https://code.createjs.com/1.0.0/easeljs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/ros2d@0.9.0/build/ros2d.min.js"></script>
+    <style> /* เปิดส่วนของการเขียน CSS เพื่อตกแต่งความสวยงามให้หน้าเว็บ */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f0f2f5; display: flex; height: 100vh; } /* ตั้งค่าฟอนต์ ลบขอบจอ ทำพื้นหลังสีเทาอ่อน และแบ่งหน้าจอแบบยืดหยุ่นให้เต็มความสูง 100vh */
+        
+        /* ตกแต่งแถบเมนูด้านซ้าย */
+        .sidebar { width: 250px; background: #2c3e50; color: white; padding: 20px; display: flex; flex-direction: column; box-shadow: 2px 0 5px rgba(0,0,0,0.1); } /* กำหนดความกว้าง สีพื้นหลังกรมท่า ตัวอักษรขาว จัดเรียงเนื้อหาแนวตั้ง และใส่เงาด้านขวา */
+        .sidebar h2 { margin-top: 0; font-size: 1.2rem; border-bottom: 1px solid #444; padding-bottom: 10px; } /* ตกแต่งหัวข้อแผงควบคุมให้มีเส้นใต้กั้นบางๆ */
+        .status-box { background: #34495e; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; } /* กล่องแสดงสถานะ สีส้มทึบ ขอบมน เว้นระยะห่างด้านล่าง */
+        .status-indicator { display: inline-block; width: 10px; height: 10px; background: #dc3545; border-radius: 50%; margin-right: 5px; } /* ทำจุดไฟสถานะให้เป็นวงกลมสีแดง (ตั้งต้น) */
+        
+        /* ตกแต่งปุ่มควบคุมต่างๆ */
+        .btn { padding: 12px; margin-bottom: 10px; border: none; border-radius: 5px; cursor: pointer; color: white; font-weight: bold; font-size: 1rem; transition: 0.2s; } /* ตั้งค่าพื้นฐานให้ทุกปุ่มดูนูน ขอบมน และเปลี่ยนเมาส์เป็นรูปนิ้ว */
+        .btn-connect { background: #27ae60; } /* เปลี่ยนสีปุ่มเชื่อมต่อเป็นสีเขียว */
+        .btn-connect:hover { background: #219653; } /* เมื่อเอาเมาส์ชี้ปุ่มเชื่อมต่อ ให้สีเขียวเข้มขึ้น */
+        .btn-stop { background: #e74c3c; margin-top: auto; } /* เปลี่ยนปุ่มหยุดเป็นสีแดง และดันปุ่มนี้ไปอยู่ล่างสุดของแถบซ้าย */
+        .btn-stop:hover { background: #c0392b; } /* เมื่อเอาเมาส์ชี้ปุ่มหยุด ให้สีแดงเข้มขึ้น */
+        
+        /* ตกแต่งพื้นที่แผนที่ตรงกลาง */
+        .main-content { flex: 1; padding: 20px; display: flex; flex-direction: column; } /* ให้พื้นที่ตรงกลางขยายเต็มจอที่เหลือ และจัดเนื้อหาแนวตั้ง */
+        .main-content h2 { margin-top: 0; color: #333; } /* ตกแต่งสีข้อความหัวข้อแผนที่ */
+        
+        /* ตกแต่งกรอบสำหรับแสดงแผนที่ ROS 2 */
+        .map-container { 
+            flex: 1; /* ขยายกรอบให้เต็มพื้นที่ที่เหลือ */
+            background: #ffffff; /* พื้นหลังสีขาว */
+            border: 2px dashed #bdc3c7; /* ขอบเส้นประสีเทา */
+            border-radius: 10px; /* ขอบมน */
+            display: flex; justify-content: center; align-items: center; /* จัดเนื้อหาข้างในให้อยู่กึ่งกลางเป๊ะๆ */
+            position: relative; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); /* กำหนดตำแหน่ง ใส่เงา และซ่อนส่วนที่ล้นขอบ */
+        }
+        .map-placeholder-text { color: #7f8c8d; font-size: 1.2rem; text-align: center; } /* ตกแต่งข้อความก่อนที่จะเชื่อมต่อแผนที่ได้ */
+        
+        /* ตกแต่งแผงควบคุมคิวงาน (Task Queue) แบบลอยตัว */
+        .queue-panel {
+            position: absolute; top: 20px; right: 20px; /* สั่งให้ลอยอยู่มุมขวาบนของหน้าจอเสมอ */
+            background: rgba(255, 255, 255, 0.95); /* พื้นหลังสีขาวโปร่งแสงนิดๆ */
+            padding: 15px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.2); width: 250px; z-index: 10; /* ใส่เงา ขอบมน และกำหนด z-index ให้ลอยอยู่ชั้นบนสุดกันโดนทับ */
+        }
+        .queue-panel h3 { margin-top: 0; font-size: 1.1rem; color: #2c3e50; } /* ตกแต่งหัวข้อคิวงาน */
+        .queue-list { list-style: none; padding: 0; margin-bottom: 15px; } /* เอาจุดหน้าหัวข้อย่อย (li) ออก */
+        .queue-list li { background: #ecf0f1; margin-bottom: 5px; padding: 8px; border-radius: 4px; font-size: 0.9rem; display: flex; justify-content: space-between; } /* ตกแต่งรายการคิวแต่ละอันให้เป็นกล่องสีเทาอ่อน */
+        .btn-start { background: #27ae60; color: white; width: 100%; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-bottom: 5px; } /* ปุ่มเริ่มส่งของ สีเขียว */
+        .btn-start:hover { background: #2ecc71; } /* เมาส์ชี้ปุ่มเริ่มให้สีสว่างขึ้น */
+        .btn-clear { background: #e74c3c; color: white; width: 100%; padding: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; } /* ปุ่มล้างคิว สีแดง */
+        .btn-clear:hover { background: #c0392b; } /* เมาส์ชี้ปุ่มล้างคิวให้สีแดงเข้มขึ้น */
+        
+        /* รูปแบบของจุดมาร์คสีแดงในแผนที่ */
+        .map-marker {
+            position: absolute; width: 14px; height: 14px; background-color: #e74c3c; border: 2px solid white; /* สร้างจุดวงกลมสีแดงขอบขาว */
+            border-radius: 50%; transform: translate(-50%, -50%); /* ทำให้จุดกลมเป๊ะ และดึงจุดกึ่งกลางมาตรงกับเมาส์ที่คลิกพอดี */
+            z-index: 1000; box-shadow: 0 0 5px rgba(0,0,0,0.5); pointer-events: none; /* ลอยอยู่บนสุด มีเงา และทะลุการคลิกได้ (ไม่บล็อกเมาส์) */
+        }
+    </style> <!-- ปิดส่วนของการเขียน CSS -->
+    
+    <!-- ดึงไลบรารีสคริปต์จากอินเทอร์เน็ต เพื่อให้เบราว์เซอร์คุยกับ ROS 2 ได้ -->
+    <script src="https://cdn.jsdelivr.net/npm/eventemitter2@6/lib/eventemitter2.min.js"></script> <!-- ไลบรารีจัดการอีเวนต์ -->
+    <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script> <!-- หัวใจหลัก! ไลบรารี roslibjs เพื่อเชื่อม WebSockets กับ ROS -->
+    <script src="https://code.createjs.com/1.0.0/easeljs.min.js"></script> <!-- ไลบรารีสำหรับวาดกราฟิกแผนที่ 2 มิติ -->
+    <script src="https://cdn.jsdelivr.net/npm/ros2d@0.9.0/build/ros2d.min.js"></script> <!-- ไลบรารีแปลงข้อมูลแผนที่ ROS ให้เป็นภาพ (ros2djs) -->
 </head>
-<body>
+<body> <!-- เริ่มต้นส่วนที่แสดงผลบนหน้าจอจริงๆ -->
 
     <!-- แผงควบคุมด้านซ้าย -->
     <div class="sidebar">
         <h2>⚙️ แผงควบคุม (Dashboard)</h2>
         
-        <div class="status-box">
-            <div><span class="status-indicator" id="ros-status-dot"></span> <b>สถานะ:</b> <span id="ros-status-text">ยังไม่เชื่อมต่อ</span></div>
-            <div style="margin-top: 10px;">🔋 <b>แบตเตอรี่:</b> --%</div>
+        <div class="status-box"> <!-- กล่องแสดงสถานะการเชื่อมต่อ -->
+            <div><span class="status-indicator" id="ros-status-dot"></span> <b>สถานะ:</b> <span id="ros-status-text">ยังไม่เชื่อมต่อ</span></div> <!-- ไฟและข้อความสถานะ -->
+            <div style="margin-top: 10px;">🔋 <b>แบตเตอรี่:</b> --%</div> <!-- แสดงเปอร์เซ็นต์แบตเตอรี่ (จำลองไว้ก่อน) -->
         </div>
 
-        <button class="btn btn-connect" onclick="connectToRobot()">🔗 เชื่อมต่อหุ่นยนต์</button>
+        <button class="btn btn-connect" onclick="connectToRobot()">🔗 เชื่อมต่อหุ่นยนต์</button> <!-- ปุ่มกดเรียกฟังก์ชันเชื่อมต่อ ROS -->
         
-        <!-- แผงปุ่มควบคุมทิศทางตรงนี้ -->
+        <!-- แผงปุ่มควบคุมทิศทาง (Manual Control) -->
         <div style="background: #34495e; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
             <b style="display: block; margin-bottom: 10px;">🎮 บังคับรถ (Manual)</b>
-            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(0.2, 0)">หน้า</button><br>
-            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(0, 0.5)">ซ้าย</button>
-            <button class="btn" style="background: #95a5a6; width: 60px;" onclick="moveRobot(0, 0)">หยุด</button>
-            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(0, -0.5)">ขวา</button><br>
-            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(-0.2, 0)">หลัง</button>
+            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(0.2, 0)">หน้า</button><br> <!-- กดแล้วส่งค่า x=0.2 รถเดินหน้า -->
+            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(0, 0.5)">ซ้าย</button> <!-- กดแล้วส่งค่า z=0.5 รถหมุนซ้าย -->
+            <button class="btn" style="background: #95a5a6; width: 60px;" onclick="moveRobot(0, 0)">หยุด</button> <!-- กดแล้วส่งค่า 0 ทั้งหมด รถหยุด -->
+            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(0, -0.5)">ขวา</button><br> <!-- กดแล้วส่งค่า z=-0.5 รถหมุนขวา -->
+            <button class="btn" style="background: #3498db; width: 60px;" onclick="moveRobot(-0.2, 0)">หลัง</button> <!-- กดแล้วส่งค่า x=-0.2 รถถอยหลัง -->
         </div>
         
         <!-- ปุ่มหยุดฉุกเฉินให้อยู่ล่างสุด -->
         <button class="btn btn-stop" onclick="emergencyStop()">🛑 Emergency Stop</button>
-    </div>
+    </div> <!-- ปิดแผงด้านซ้าย -->
 
-    <!-- พื้นที่แสดงแผนที่ -->
+    <!-- พื้นที่แสดงแผนที่ตรงกลาง -->
     <div class="main-content">
-        <h2>📍 แผนที่นำทาง (Online Version)</h2>
+        <h2>📍 แผนที่นำทาง (Online Version)</h2> <!-- หัวข้อแผนที่ -->
         
-        <!-- แก้ไขโครงสร้างกล่องแผนที่ให้ถูกต้อง -->
-        <div class="map-container" id="map-container">
-            <div class="map-placeholder-text" id="map-placeholder">
+        <div class="map-container" id="map-container"> <!-- กล่องพื้นที่สำหรับใช้วาดแผนที่ -->
+            <div class="map-placeholder-text" id="map-placeholder"> <!-- ข้อความรอเชื่อมต่อ (จะหายไปเมื่อแผนที่โหลดเสร็จ) -->
                 <p>🗺️ พื้นที่แสดงผลแผนที่ 2 มิติจาก ROS 2</p>
                 <p style="font-size: 0.9rem; margin-top: -10px;">(รอการเชื่อมต่อผ่าน WebSockets / roslibjs)</p>
             </div>
         </div>
-    </div>
+    </div> <!-- ปิดพื้นที่แผนที่ -->
 
-    <!-- แผงคิวงานแบบลอยตัว -->
+    <!-- แผงคิวงานมุมขวาบนแบบลอยตัว -->
     <div class="queue-panel">
         <h3>📋 คิวส่งของ (สูงสุด 4 จุด)</h3>
-        <ul class="queue-list" id="queueList">
+        <ul class="queue-list" id="queueList"> <!-- รายการจุดที่เลือกรอส่ง -->
             <li>ยังไม่มีคิวงาน...</li>
         </ul>
-        <button class="btn-start" onclick="startTaskQueue()">🚀 เริ่มส่งของ & กลับฐาน</button>
-        <button class="btn-clear" onclick="clearQueue()">🗑️ ล้างคิวทั้งหมด</button>
+        <button class="btn-start" onclick="startTaskQueue()">🚀 เริ่มส่งของ & กลับฐาน</button> <!-- ปุ่มกดส่งเป้าหมายให้รถวิ่ง -->
+        <button class="btn-clear" onclick="clearQueue()">🗑️ ล้างคิวทั้งหมด</button> <!-- ปุ่มล้างจุดสีแดงและล้างคิว -->
     </div>
 
-    <!-- โค้ด JavaScript ทั้งหมดต้องอยู่ในแท็ก script นี้ -->
-    <script>
-        // สร้างตัวแปรสำหรับเชื่อมต่อ ROS
-        const ros = new ROSLIB.Ros();
+    <!-- เริ่มต้นการเขียน JavaScript (สมองกลของหน้าเว็บนี้) -->
+    <script> 
+        // สร้างอ็อบเจ็กต์หลักของ ROS เพื่อเตรียมเชื่อมต่อ
+        const ros = new ROSLIB.Ros(); // เรียกใช้งานไลบรารี roslibjs
 
         // ---------------------------------------------------------
-        // การเชื่อมต่อ ROS 2 (สเต็ปที่ 4 อยู่ที่นี่)
+        // การจัดการสถานะเมื่อเชื่อมต่อ ROS 2 สำเร็จ
         // ---------------------------------------------------------
-        ros.on('connection', function() {
-            console.log('Connected to websocket server.');
-            document.getElementById('ros-status-text').innerText = 'เชื่อมต่อแล้ว';
-            document.getElementById('ros-status-text').style.color = '#27ae60';
-            document.getElementById('ros-status-dot').style.background = '#27ae60';
+        ros.on('connection', function() { // ดักจับเหตุการณ์ถ้าท่อเชื่อมต่อสำเร็จ
+            console.log('Connected to websocket server.'); // ปรินต์ข้อความในคอนโซลเบราว์เซอร์
+            document.getElementById('ros-status-text').innerText = 'เชื่อมต่อแล้ว'; // เปลี่ยนข้อความสถานะบนหน้าจอ
+            document.getElementById('ros-status-text').style.color = '#27ae60'; // เปลี่ยนตัวอักษรเป็นสีเขียว
+            document.getElementById('ros-status-dot').style.background = '#27ae60'; // เปลี่ยนไฟกระพริบเป็นสีเขียว
             
-            // 📍 สเต็ปที่ 4: สั่งวาดแผนที่ทันทีที่เชื่อมต่อติด
-            initMap(); 
-        });
+            initMap();  // เมื่อต่อติดปุ๊บ ให้เรียกฟังก์ชันวาดแผนที่ทันที
+        }); // ปิดเหตุการณ์ connection
 
-        ros.on('error', function(error) {
-            console.log('Error connecting to websocket server: ', error);
-            document.getElementById('ros-status-text').innerText = 'เชื่อมต่อล้มเหลว!';
-            document.getElementById('ros-status-dot').style.background = '#e74c3c';
-        });
+        // ดักจับเหตุการณ์ถ้าการเชื่อมต่อมีปัญหา (Error)
+        ros.on('error', function(error) { 
+            console.log('Error connecting to websocket server: ', error); // ปรินต์ข้อผิดพลาด
+            document.getElementById('ros-status-text').innerText = 'เชื่อมต่อล้มเหลว!'; // แจ้งเตือนผู้ใช้บนจอ
+            document.getElementById('ros-status-dot').style.background = '#e74c3c'; // เปลี่ยนไฟเป็นสีแดง
+        }); // ปิดเหตุการณ์ error
 
-        ros.on('close', function() {
-            console.log('Connection to websocket server closed.');
-            document.getElementById('ros-status-text').innerText = 'ตัดการเชื่อมต่อ';
-            document.getElementById('ros-status-text').style.color = '#333';
-            document.getElementById('ros-status-dot').style.background = '#dc3545';
-        });
+        // ดักจับเหตุการณ์ถ้าโดนตัดการเชื่อมต่อ (Close)
+        ros.on('close', function() { 
+            console.log('Connection to websocket server closed.'); // ปรินต์ในคอนโซล
+            document.getElementById('ros-status-text').innerText = 'ตัดการเชื่อมต่อ'; // เปลี่ยนข้อความสถานะ
+            document.getElementById('ros-status-text').style.color = '#333'; // กลับไปใช้สีเทา/ดำ
+            document.getElementById('ros-status-dot').style.background = '#dc3545'; // เปลี่ยนไฟเป็นสีแดง
+        }); // ปิดเหตุการณ์ close
 
-        function connectToRobot() {
-            document.getElementById('ros-status-text').innerText = 'กำลังเชื่อมต่อ...';
-            // เปลี่ยนเป็นลิงก์ Ngrok ของเรา และต้องใช้ wss:// (มีตัว s) เพื่อความปลอดภัย
-            ros.connect('wss://unissued-tactful-encounter.ngrok-free.dev'); 
-        }
-        }
+        // ฟังก์ชันเริ่มกระบวนการเชื่อมต่อ (เรียกเมื่อคลิกปุ่ม "เชื่อมต่อหุ่นยนต์")
+        function connectToRobot() { 
+            document.getElementById('ros-status-text').innerText = 'กำลังเชื่อมต่อ...'; // ขึ้นแจ้งเตือนระหว่างรอ
+            
+            // 🚨 แก้ไขลิงก์เชื่อมต่อตรงนี้! เอาลิงก์ Cloudflare ที่รันได้มาแทนที่คำว่า "ใส่ลิงก์ตรงนี้"
+            ros.connect('wss://ใส่ลิงก์ตรงนี้.trycloudflare.com'); // สร้างการเชื่อมต่อ WebSocket ไปหาเซิร์ฟเวอร์ ROS
+        } // ปิดฟังก์ชัน (ลบปีกกาที่เกินมาให้แล้ว)
 
         // ---------------------------------------------------------
-        // ส่วนควบคุมการเคลื่อนที่ (Teleop)
+        // ส่วนควบคุมการเคลื่อนที่แบบใช้มือ (Teleop)
         // ---------------------------------------------------------
-        const cmdVel = new ROSLIB.Topic({
-            ros : ros,
-            name : '/cmd_vel',
-            messageType : 'geometry_msgs/msg/Twist'
+        const cmdVel = new ROSLIB.Topic({ // สร้างช่องทางการส่งข้อมูล (Topic) ไปคุยกับเรื่องการขยับล้อ
+            ros : ros, // กำหนดว่าใช้ ROS ตัวไหน (ตัวที่เราประกาศไว้ด้านบน)
+            name : '/cmd_vel', // ระบุชื่อ Topic ปลายทาง (รถใช้ /cmd_vel รับคำสั่งวิ่ง)
+            messageType : 'geometry_msgs/msg/Twist' // ระบุรูปแบบข้อมูล (Twist คือข้อความพิกัดความเร็วแบบ 3D)
         });
 
-        function moveRobot(linearSpeed, angularSpeed) {
-            if (!ros.isConnected) {
-                alert("กรุณากดเชื่อมต่อหุ่นยนต์ก่อนครับ!");
-                return;
+        // ฟังก์ชันสั่งรถขยับ (รับค่าความเร็วเดินหน้า-ถอยหลัง และค่าความเร็วหมุน)
+        function moveRobot(linearSpeed, angularSpeed) { 
+            if (!ros.isConnected) { // เช็กก่อนว่าตอนนี้กดเชื่อมต่อ ROS หรือยัง
+                alert("กรุณากดเชื่อมต่อหุ่นยนต์ก่อนครับ!"); // ถ้ายังไม่ต่อ ให้เด้งหน้าต่างเตือน
+                return; // หยุดทำงาน ไม่ส่งคำสั่ง
             }
-            const twist = new ROSLIB.Message({
-                linear : { x : linearSpeed, y : 0.0, z : 0.0 },
-                angular : { x : 0.0, y : 0.0, z : angularSpeed }
+            const twist = new ROSLIB.Message({ // สร้างแพ็กเกจข้อความตามมาตรฐานของ ROS
+                linear : { x : linearSpeed, y : 0.0, z : 0.0 }, // แกน x คือเดินหน้า/ถอยหลัง
+                angular : { x : 0.0, y : 0.0, z : angularSpeed } // แกน z คือหมุนซ้าย/ขวา
             });
-            cmdVel.publish(twist);
+            cmdVel.publish(twist); // สั่งยิงข้อมูลที่แพ็กเสร็จแล้ว ส่งลงท่อไปหาหุ่นยนต์ทันที
         }
 
-        function emergencyStop() {
-            moveRobot(0.0, 0.0);
-            console.log("🛑 สั่งเบรกฉุกเฉินแล้ว!");
+        // ฟังก์ชันเบรกฉุกเฉิน
+        function emergencyStop() { 
+            moveRobot(0.0, 0.0); // สั่งยิงความเร็วเป็น 0 ทั้งหมด ทำให้รถเบรกหัวทิ่มทันที
+            console.log("🛑 สั่งเบรกฉุกเฉินแล้ว!"); // โชว์ลอกในคอนโซล
         }
 
         // ---------------------------------------------------------
-        // ระบบคิวงาน (Task Queue System) & แผนที่ 2D
+        // ระบบคิวงาน (Task Queue System) & วาดแผนที่ 2D
         // ---------------------------------------------------------
-        let taskQueue = [];
-        const MAX_TASKS = 4;
-        let viewer; 
+        let taskQueue = []; // สร้างอะเรย์ (กล่องเก็บข้อมูล) ไว้เก็บพิกัด x, y ที่ผู้ใช้กด
+        const MAX_TASKS = 4; // ตั้งลิมิตว่ารับออเดอร์ส่งของได้สูงสุด 4 จุด
+        let viewer; // สร้างตัวแปรเตรียมไว้เก็บตัวจำลองแผนที่
 
-        function initMap() {
-            // ซ่อนข้อความ Placeholder ทิ้งไป
-            document.getElementById('map-placeholder').style.display = 'none';
-
-            // ล้างหน้าจอแผนที่เดิมทิ้ง (เผื่อกดเชื่อมต่อซ้ำ)
-            const mapContainer = document.getElementById('map-container');
+        // ฟังก์ชันเริ่มต้นวาดแผนที่ (ทำงานอัตโนมัติเมื่อต่อ ROS ติด)
+        function initMap() { 
+            document.getElementById('map-placeholder').style.display = 'none'; // ซ่อนข้อความ Placeholder ทิ้งไป
             
-            // ป้องกันไม่ให้วาดแผนที่ซ้อนกันหลายรอบ
-            if (!viewer) {
-                viewer = new ROS2D.Viewer({
-                    divID : 'map-container',
-                    width : 600,
-                    height : 600
+            if (!viewer) { // ป้องกันไม่ให้วาดแผนที่ซ้อนกันหลายรอบ (เช็กว่าถ้าวาดยังไม่ถูกสร้าง ค่อยสร้าง)
+                viewer = new ROS2D.Viewer({ // ใช้ไลบรารี ROS2D สร้างพื้นที่สำหรับวาด
+                    divID : 'map-container', // วาดลงไปในกล่องที่มี id ว่า map-container
+                    width : 600, // กำหนดความกว้างหน้าแผนที่ (600px)
+                    height : 600 // กำหนดความสูง (600px)
                 });
 
-                const gridClient = new ROS2D.OccupancyGridClient({
-                    ros : ros,
-                    rootObject : viewer.scene,
-                    continuous: true
+                const gridClient = new ROS2D.OccupancyGridClient({ // สร้างตัวรับข้อมูลจาก Topic แผนที่ (/map)
+                    ros : ros, // ใช้ท่อการเชื่อมต่อเดิม
+                    rootObject : viewer.scene, // ให้วาดแผนที่ลงในพื้นที่ scene ของ viewer
+                    continuous: true // อัปเดตแผนที่แบบต่อเนื่อง (เวลาสแกนพื้นที่ใหม่ๆ)
                 });
 
-                gridClient.on('change', function() {
-                    viewer.scaleToDimensions(gridClient.currentGrid.width, gridClient.currentGrid.height);
-                    viewer.shift(gridClient.currentGrid.pose.position.x, gridClient.currentGrid.pose.position.y);
+                // ดักจับว่าถ้าแผนที่มีการขยับหรือเปลี่ยนแปลง
+                gridClient.on('change', function() { 
+                    viewer.scaleToDimensions(gridClient.currentGrid.width, gridClient.currentGrid.height); // ปรับสเกลหน้าจอให้พอดีกับขนาดแผนที่
+                    viewer.shift(gridClient.currentGrid.pose.position.x, gridClient.currentGrid.pose.position.y); // ขยับจุดกึ่งกลางหน้าจอให้ตรงกับแผนที่จริง
                 });
 
-                // ดักจับเหตุการณ์คลิกแผนที่
-                viewer.scene.addEventListener('stagemousedown', function(event) {
-                    if (taskQueue.length >= MAX_TASKS) {
-                        alert('คิวเต็มแล้วครับ! (รับได้สูงสุด 4 จุด)');
-                        return;
+                // ดักจับเหตุการณ์เวลาผู้ใช้เอาเมาส์ "คลิก" ลงบนพื้นที่แผนที่
+                viewer.scene.addEventListener('stagemousedown', function(event) { 
+                    if (taskQueue.length >= MAX_TASKS) { // เช็กว่าถ้าคิวงานเต็ม 4 จุดแล้ว
+                        alert('คิวเต็มแล้วครับ! (รับได้สูงสุด 4 จุด)'); // เด้งเตือนว่ารับเพิ่มไม่ได้แล้ว
+                        return; // หยุดทำงาน ไม่บันทึกจุดใหม่
                     }
 
-                    const pos = viewer.scene.globalToRos(event.stageX, event.stageY);
+                    const pos = viewer.scene.globalToRos(event.stageX, event.stageY); // แปลงพิกัดพิกเซลบนจอ (X, Y) ให้เป็นพิกัดจริงของ ROS
                     
-                    taskQueue.push({
-                        x: pos.x.toFixed(2),
-                        y: pos.y.toFixed(2)
+                    taskQueue.push({ // นำพิกัดใหม่ ดันเข้าไปเก็บในอะเรย์คิวงาน
+                        x: pos.x.toFixed(2), // ปัดทศนิยมแกน X ให้เหลือ 2 ตำแหน่ง
+                        y: pos.y.toFixed(2)  // ปัดทศนิยมแกน Y ให้เหลือ 2 ตำแหน่ง
                     });
 
-                    updateQueueDisplay(); 
-                });
+                    updateQueueDisplay();  // เรียกฟังก์ชันอัปเดตหน้าจอเพื่อโชว์รายการคิวใหม่
+                }); // ปิดการจับคลิก
             }
-        }
+        } // ปิดฟังก์ชัน initMap
 
-        function updateQueueDisplay() {
-            const queueList = document.getElementById('queueList');
-            queueList.innerHTML = ''; 
+        // ฟังก์ชันอัปเดตข้อความรายการคิวที่กล่องขวาบน
+        function updateQueueDisplay() { 
+            const queueList = document.getElementById('queueList'); // ค้นหากล่องรายการคิว
+            queueList.innerHTML = ''; // ล้างข้อความเก่าในกล่องทิ้งก่อน
 
-            if (taskQueue.length === 0) {
-                queueList.innerHTML = '<li>ยังไม่มีคิวงาน...</li>';
-                return;
+            if (taskQueue.length === 0) { // ถ้าตอนนี้ไม่มีคิวเลย (คิวว่าง)
+                queueList.innerHTML = '<li>ยังไม่มีคิวงาน...</li>'; // โชว์ข้อความว่ายังไม่มีคิว
+                return; // หยุดการทำงาน
             }
 
-            taskQueue.forEach((task, index) => {
-                const li = document.createElement('li');
-                li.innerHTML = `📍 จุดที่ ${index + 1} : ( X: ${task.x}, Y: ${task.y} )`;
-                queueList.appendChild(li);
+            taskQueue.forEach((task, index) => { // วนลูปตามจำนวนคิวงานที่มีอยู่
+                const li = document.createElement('li'); // สร้างแท็กหัวข้อย่อย (list) ขึ้นมาใหม่
+                li.innerHTML = `📍 จุดที่ ${index + 1} : ( X: ${task.x}, Y: ${task.y} )`; // พิมพ์ข้อความบอกลำดับ และพิกัด
+                queueList.appendChild(li); // ยัดหัวข้อย่อยนี้เข้าไปในกล่องแสดงผล
             });
         }
 
-        function clearQueue() {
-            taskQueue = [];
-            updateQueueDisplay();
+        // ฟังก์ชันกวาดล้างคิวงาน (กดเมื่อต้องการรีเซ็ต)
+        function clearQueue() { 
+            taskQueue = []; // ล้างข้อมูลในอะเรย์ให้เป็นหน้ากระดาษเปล่า
+            updateQueueDisplay(); // สั่งให้อัปเดตกล่องข้อความขวาบนให้ว่างเปล่าตาม
             
-            // ลบจุดมาร์คสีแดงทั้งหมดออกจากแผนที่
-            let markers = document.querySelectorAll('.map-marker');
-            markers.forEach(marker => marker.remove());
+            let markers = document.querySelectorAll('.map-marker'); // ค้นหาจุดวงกลมสีแดงที่เคยปักไว้บนจอทั้งหมด
+            markers.forEach(marker => marker.remove()); // วนลูปลบจุดแดงพวกนั้นทิ้งออกจากจอทีละอัน
         }
 
         // ---------------------------------------------------------
-        // เฟส 3: ระบบขับเคลื่อน (ใช้ Topic /goal_pose เลียนแบบปุ่ม Nav2 Goal ใน RViz)
+        // ระบบขับเคลื่อนอัตโนมัติ (Nav2 Goal)
         // ---------------------------------------------------------
         
-        // 1. สร้างช่องทางส่งพิกัดไปที่ Topic /goal_pose โดยตรง
-        const goalTopic = new ROSLIB.Topic({
-            ros: ros,
-            name: '/goal_pose',
-            messageType: 'geometry_msgs/msg/PoseStamped'
+        // 1. สร้างช่องทาง (Topic) สำหรับส่งเป้าหมายการเดินทาง
+        const goalTopic = new ROSLIB.Topic({ 
+            ros: ros, // ใช้ ROS ตัวเดิม
+            name: '/goal_pose', // ส่งข้อมูลไปที่ Topic ชื่อ /goal_pose (Nav2 จะรอฟังอยู่ที่นี่)
+            messageType: 'geometry_msgs/msg/PoseStamped' // รูปแบบข้อมูล เป็นพิกัด 3 มิติพร้อมเวลา (PoseStamped)
         });
 
-        // 2. ฟังก์ชันสั่งรถวิ่ง (ผูกกับปุ่ม "เริ่มส่งของ & กลับฐาน")
-        function startTaskQueue() {
-            // เช็กว่ามีพิกัดในคิวที่ถูกคลิกไว้หรือยัง
-            if (typeof taskQueue === 'undefined' || taskQueue.length === 0) {
-                alert("กรุณาคลิกเลือกพิกัดบนแผนที่ก่อนครับ!");
-                return;
+        // 2. ฟังก์ชันสั่งรถวิ่ง (ทำงานเมื่อกดปุ่ม "เริ่มส่งของ")
+        function startTaskQueue() { 
+            if (typeof taskQueue === 'undefined' || taskQueue.length === 0) { // ตรวจสอบว่าถ้ายังไม่ได้คลิกแผนที่เลย
+                alert("กรุณาคลิกเลือกพิกัดบนแผนที่ก่อนครับ!"); // เตือนให้ผู้ใช้ไปคลิกแผนที่ก่อน
+                return; // หยุดทำงาน ไม่ส่งคำสั่ง
             }
 
-            // ⚠️ เพื่อความชัวร์ในการทดสอบรอบนี้ เราจะสั่งให้วิ่งไปแค่ "จุดแรก" จุดเดียวก่อนครับ
-            const target = taskQueue[0]; 
-            console.log(`🚀 กำลังส่งคำสั่งไปเป้าหมาย: X=${target.x}, Y=${target.y}`);
+            const target = taskQueue[0]; // (ทดสอบเบื้องต้น) ดึงแค่จุดแรกสุดในคิวงานออกมาใช้จุดเดียวก่อน
+            console.log(`🚀 กำลังส่งคำสั่งไปเป้าหมาย: X=${target.x}, Y=${target.y}`); // ปรินต์ล็อกไว้ตรวจสอบ
 
-            // 3. แพ็กข้อมูลพิกัด (ตั้งค่า frame_id เป็น 'map' ให้ตรงกับโลกจำลอง)
-            const poseMsg = new ROSLIB.Message({
-                header: { 
-                    frame_id: 'map'
-                },
+            // 3. แพ็กข้อมูลพิกัด เพื่อส่งให้ Nav2
+            const poseMsg = new ROSLIB.Message({ 
+                header: { frame_id: 'map' }, // ตั้งค่าโลกอ้างอิงให้เป็น 'map' เพื่อให้พิกัดตรงกัน
                 pose: {
-                    position: { 
-                        x: parseFloat(target.x), 
-                        y: parseFloat(target.y), 
-                        z: 0.0 
-                    },
-                    orientation: { 
-                        x: 0.0, 
-                        y: 0.0, 
-                        z: 0.0, 
-                        w: 1.0 // กำหนดให้หันหน้าไปทิศทางเริ่มต้น
-                    }
+                    position: { x: parseFloat(target.x), y: parseFloat(target.y), z: 0.0 }, // กำหนดเป้าหมายแกน x, y ส่วนแกน z เป็น 0 (รถไม่บิน)
+                    orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } // ตั้งให้รถหันหน้าไปทิศเริ่มต้นเสมอตอนไปถึงจุดหมาย
                 }
             });
 
-            // 4. ยิงคำสั่งทะลุเข้า Nav2 ทันที!
-            goalTopic.publish(poseMsg);
+            // 4. ยิงข้อมูลเป้าหมายทะลุเข้าสมองระบบนำทาง (Nav2) ทันที
+            goalTopic.publish(poseMsg); // ส่งคำสั่ง!
             
-            // แจ้งเตือนที่หน้าเว็บเพื่อให้รู้ว่ายิงคำสั่งออกไปแล้ว
-            alert(`ส่งพิกัด (X: ${target.x}, Y: ${target.y}) สำเร็จ! หันไปดูล้อรถใน Gazebo ได้เลยครับ`);
+            alert(`ส่งพิกัด (X: ${target.x}, Y: ${target.y}) สำเร็จ! หันไปดูล้อรถใน Gazebo ได้เลยครับ`); // เด้งบอกผู้ใช้ว่าส่งข้อมูลสำเร็จ
             
-            // ล้างหน้าจอคิวงานบนเว็บ
-            if (typeof clearQueue === 'function') {
-                clearQueue(); 
-            }
+            if (typeof clearQueue === 'function') { clearQueue(); } // พอยิงคำสั่งแล้ว ให้ล้างคิวทิ้งเตรียมรับงานใหม่
         }
 
         // ---------------------------------------------------------
-        // ระบบวาดจุดมาร์คสีแดงบนแผนที่แบบแม่นยำ (แก้บั๊กหลุดขอบ + ครบ 4 จุด)
+        // ระบบวาดจุดมาร์คสีแดงเวลากดคลิกแผนที่บนเว็บ
         // ---------------------------------------------------------
-        document.getElementById('map-container').addEventListener('click', function(event) {
+        document.getElementById('map-container').addEventListener('click', function(event) { // ดักจับเหตุการณ์เวลาผู้ใช้คลิกเมาส์ลงบนกล่องแผนที่
             
-            // ให้นับจำนวนจุดสีแดงที่มีอยู่บนหน้าจอตอนนี้เลย
-            let currentMarkers = document.querySelectorAll('.map-marker');
+            let currentMarkers = document.querySelectorAll('.map-marker'); // ค้นหาว่าตอนนี้มีจุดแดงบนจอกี่จุดแล้ว
             
-            // ถ้ามีจุดแดงครบ 4 จุดแล้ว ค่อยบล็อกไม่ให้วาดเพิ่ม
-            if (currentMarkers.length >= 4) return; 
+            if (currentMarkers.length >= 4) return; // ถ้ามีจุดแดงครบ 4 จุดแล้ว ให้หยุดวาดเพิ่มทันที (ป้องกันกดรัวเกินขีดจำกัด)
 
-            let marker = document.createElement('div');
-            marker.className = 'map-marker';
+            let marker = document.createElement('div'); // สร้างกรอบ (div) เปล่าๆ ขึ้นมาในอากาศ
+            marker.className = 'map-marker'; // แปะคลาส map-marker เพื่อให้มันดึง CSS จุดวงกลมสีแดงมาแต่งตัว
             
-            // ใช้ค่า clientX/clientY ลบกับระยะขอบของกล่อง ทำให้จุดตรงเป๊ะ
-            let rect = this.getBoundingClientRect();
-            marker.style.left = (event.clientX - rect.left) + 'px';
-            marker.style.top = (event.clientY - rect.top) + 'px';
+            let rect = this.getBoundingClientRect(); // วัดขนาดและตำแหน่งของกล่องแผนที่เทียบกับขอบจอ
+            marker.style.left = (event.clientX - rect.left) + 'px'; // คำนวณแกน X: เอาตำแหน่งเมาส์ ลบกับขอบกล่องด้านซ้าย เพื่อให้จุดตรงเป๊ะ
+            marker.style.top = (event.clientY - rect.top) + 'px'; // คำนวณแกน Y: เอาตำแหน่งเมาส์ ลบกับขอบกล่องด้านบน
             
-            this.appendChild(marker);
-        });
-    </script>
-</body>
-</html>
+            this.appendChild(marker); // เอาจุดสีแดงที่สร้างเสร็จแล้ว แปะลงไปบนกล่องแผนที่ให้มองเห็นได้
+        }); // ปิดเหตุการณ์คลิกวาดจุด
+    </script> <!-- ปิดแท็ก JavaScript -->
+</body> <!-- ปิดแท็กเนื้อหาหลักเว็บ -->
+</html> <!-- จบไฟล์สมบูรณ์! -->
