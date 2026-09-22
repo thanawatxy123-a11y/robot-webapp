@@ -77,6 +77,9 @@
 
         <button class="btn btn-connect" onclick="connectToRobot()">🔗 เชื่อมต่อหุ่นยนต์</button> <!-- ปุ่มกดเรียกฟังก์ชันเชื่อมต่อ ROS -->
         
+        <!-- 🌟 ปุ่มใหม่: ปุ่มเซ็ตตำแหน่งเริ่มต้น (แทน 2D Pose Estimate) 🌟 -->
+        <button class="btn" style="background: #8e44ad; margin-bottom: 20px;" onclick="setInitialPose()">🎯 เซ็ตตำแหน่งเริ่มต้น (X=0, Y=0)</button> <!-- กดปุ๊บ เลเซอร์จะทับกำแพงทันที -->
+
         <!-- แผงปุ่มควบคุมทิศทาง (Manual Control) -->
         <div style="background: #34495e; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
             <b style="display: block; margin-bottom: 10px;">🎮 บังคับรถ (Manual)</b>
@@ -149,42 +152,81 @@
         function connectToRobot() { 
             document.getElementById('ros-status-text').innerText = 'กำลังเชื่อมต่อ...'; // ขึ้นแจ้งเตือนระหว่างรอ
             
-            // 🚨 แก้ไขลิงก์เชื่อมต่อตรงนี้! เอาลิงก์ Cloudflare ที่รันได้มาแทนที่คำว่า "ใส่ลิงก์ตรงนี้"
-            ros.connect('wss://conversion-applicant-resolve-remind.trycloudflare.com'); // สร้างการเชื่อมต่อ WebSocket ไปหาเซิร์ฟเวอร์ ROS
-        } // ปิดฟังก์ชัน (ลบปีกกาที่เกินมาให้แล้ว)
+            // 🚨 แก้ลิงก์ Cloudflare บรรทัดล่างนี้ให้เป็นลิงก์ปัจจุบันของคุณ (อย่าลืม wss://) 🚨
+            ros.connect('wss://chargers-velvet-circulation-crest.trycloudflare.com'); // สร้างการเชื่อมต่อ WebSocket ไปหาเซิร์ฟเวอร์ ROS
+        } // ปิดฟังก์ชัน
+
+        // ---------------------------------------------------------
+        // 🌟 ระบบเซ็ตตำแหน่งเริ่มต้นอัตโนมัติ (แทน 2D Pose Estimate) 🌟
+        // ---------------------------------------------------------
+        const initialPoseTopic = new ROSLIB.Topic({ // สร้างช่องทางสำหรับส่งข้อมูลตำแหน่งเริ่มต้น
+            ros: ros, // ใช้ท่อเชื่อมต่อ ROS เดิม
+            name: '/initialpose', // ส่งไปที่ Topic ชื่อ /initialpose (Nav2 รอรับข้อมูลที่นี่)
+            messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped' // รูปแบบข้อมูลของตำแหน่งเริ่มต้น
+        });
+
+        function setInitialPose() { // ฟังก์ชันทำงานเมื่อกดปุ่ม "เซ็ตตำแหน่งเริ่มต้น" สีม่วง
+            if (!ros.isConnected) { // เช็กว่าต่อเว็บกับ ROS หรือยัง
+                alert("กรุณากดเชื่อมต่อหุ่นยนต์ก่อนครับ!"); // ถ้ายังไม่ต่อ ให้เด้งเตือน
+                return; // หยุดทำงาน
+            }
+
+            const poseMsg = new ROSLIB.Message({ // สร้างแพ็กเกจข้อมูลพิกัดส่งให้ ROS
+                header: { 
+                    frame_id: 'map' // อ้างอิงระบบพิกัดจากแผนที่โลก (map)
+                },
+                pose: {
+                    pose: {
+                        position: { x: 0.0, y: 0.0, z: 0.0 }, // ตั้งค่าให้รถเกิดที่จุดศูนย์กลาง (X=0, Y=0) ตรงกับใน Gazebo
+                        orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } // ให้รถหันหน้าไปทิศทางเริ่มต้นเป๊ะๆ
+                    },
+                    covariance: [ // ค่าความน่าจะเป็น (Covariance) เพื่อให้ Nav2 มั่นใจและกางเลเซอร์ออกมารับกำแพง
+                        0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                        0.0, 0.0, 0.0, 0.0, 0.0, 0.068
+                    ]
+                }
+            });
+
+            initialPoseTopic.publish(poseMsg); // สั่งยิงข้อมูลตำแหน่งส่งไปให้ ROS ทันที
+            alert("🎯 ตั้งค่าตำแหน่งเริ่มต้นเรียบร้อย! หันไปดู RViz เลเซอร์จะทับกำแพงแล้วครับ"); // เด้งหน้าต่างบอกผู้ใช้ว่าสำเร็จ
+        }
 
         // ---------------------------------------------------------
         // ส่วนควบคุมการเคลื่อนที่แบบใช้มือ (Teleop)
         // ---------------------------------------------------------
         const cmdVel = new ROSLIB.Topic({ // สร้างช่องทางการส่งข้อมูล (Topic) ไปคุยกับเรื่องการขยับล้อ
-            ros : ros, // กำหนดว่าใช้ ROS ตัวไหน (ตัวที่เราประกาศไว้ด้านบน)
-            name : '/cmd_vel', // ระบุชื่อ Topic ปลายทาง (รถใช้ /cmd_vel รับคำสั่งวิ่ง)
-            messageType : 'geometry_msgs/msg/Twist' // ระบุรูปแบบข้อมูล (Twist คือข้อความพิกัดความเร็วแบบ 3D)
+            ros : ros, // กำหนดว่าใช้ ROS ตัวไหน 
+            name : '/cmd_vel', // ระบุชื่อ Topic ปลายทาง 
+            messageType : 'geometry_msgs/msg/Twist' // ระบุรูปแบบข้อมูล (Twist)
         });
 
         // ฟังก์ชันสั่งรถขยับ (รับค่าความเร็วเดินหน้า-ถอยหลัง และค่าความเร็วหมุน)
         function moveRobot(linearSpeed, angularSpeed) { 
             if (!ros.isConnected) { // เช็กก่อนว่าตอนนี้กดเชื่อมต่อ ROS หรือยัง
-                alert("กรุณากดเชื่อมต่อหุ่นยนต์ก่อนครับ!"); // ถ้ายังไม่ต่อ ให้เด้งหน้าต่างเตือน
+                alert("กรุณากดเชื่อมต่อหุ่นยนต์ก่อนครับ!"); // ถ้ายังไม่ต่อ ให้เด้งเตือน
                 return; // หยุดทำงาน ไม่ส่งคำสั่ง
             }
-            const twist = new ROSLIB.Message({ // สร้างแพ็กเกจข้อความตามมาตรฐานของ ROS
+            const twist = new ROSLIB.Message({ // สร้างแพ็กเกจข้อความ
                 linear : { x : linearSpeed, y : 0.0, z : 0.0 }, // แกน x คือเดินหน้า/ถอยหลัง
                 angular : { x : 0.0, y : 0.0, z : angularSpeed } // แกน z คือหมุนซ้าย/ขวา
             });
-            cmdVel.publish(twist); // สั่งยิงข้อมูลที่แพ็กเสร็จแล้ว ส่งลงท่อไปหาหุ่นยนต์ทันที
+            cmdVel.publish(twist); // สั่งยิงข้อมูล
         }
 
         // ฟังก์ชันเบรกฉุกเฉิน
         function emergencyStop() { 
-            moveRobot(0.0, 0.0); // สั่งยิงความเร็วเป็น 0 ทั้งหมด ทำให้รถเบรกหัวทิ่มทันที
+            moveRobot(0.0, 0.0); // สั่งยิงความเร็วเป็น 0 ทำให้รถเบรกทันที
             console.log("🛑 สั่งเบรกฉุกเฉินแล้ว!"); // โชว์ลอกในคอนโซล
         }
 
         // ---------------------------------------------------------
         // ระบบคิวงาน (Task Queue System) & วาดแผนที่ 2D
         // ---------------------------------------------------------
-        let taskQueue = []; // สร้างอะเรย์ (กล่องเก็บข้อมูล) ไว้เก็บพิกัด x, y ที่ผู้ใช้กด
+        let taskQueue = []; // สร้างอะเรย์ (กล่องเก็บข้อมูล) ไว้เก็บพิกัด
         const MAX_TASKS = 4; // ตั้งลิมิตว่ารับออเดอร์ส่งของได้สูงสุด 4 จุด
         let viewer; // สร้างตัวแปรเตรียมไว้เก็บตัวจำลองแผนที่
 
@@ -192,40 +234,40 @@
         function initMap() { 
             document.getElementById('map-placeholder').style.display = 'none'; // ซ่อนข้อความ Placeholder ทิ้งไป
             
-            if (!viewer) { // ป้องกันไม่ให้วาดแผนที่ซ้อนกันหลายรอบ (เช็กว่าถ้าวาดยังไม่ถูกสร้าง ค่อยสร้าง)
+            if (!viewer) { // ป้องกันไม่ให้วาดแผนที่ซ้อนกันหลายรอบ
                 viewer = new ROS2D.Viewer({ // ใช้ไลบรารี ROS2D สร้างพื้นที่สำหรับวาด
-                    divID : 'map-container', // วาดลงไปในกล่องที่มี id ว่า map-container
-                    width : 600, // กำหนดความกว้างหน้าแผนที่ (600px)
-                    height : 600 // กำหนดความสูง (600px)
+                    divID : 'map-container', // วาดลงไปในกล่อง id=map-container
+                    width : 600, // กำหนดความกว้างหน้าแผนที่
+                    height : 600 // กำหนดความสูง
                 });
 
                 const gridClient = new ROS2D.OccupancyGridClient({ // สร้างตัวรับข้อมูลจาก Topic แผนที่ (/map)
                     ros : ros, // ใช้ท่อการเชื่อมต่อเดิม
                     rootObject : viewer.scene, // ให้วาดแผนที่ลงในพื้นที่ scene ของ viewer
-                    continuous: true // อัปเดตแผนที่แบบต่อเนื่อง (เวลาสแกนพื้นที่ใหม่ๆ)
+                    continuous: true // อัปเดตแผนที่แบบต่อเนื่อง
                 });
 
                 // ดักจับว่าถ้าแผนที่มีการขยับหรือเปลี่ยนแปลง
                 gridClient.on('change', function() { 
-                    viewer.scaleToDimensions(gridClient.currentGrid.width, gridClient.currentGrid.height); // ปรับสเกลหน้าจอให้พอดีกับขนาดแผนที่
-                    viewer.shift(gridClient.currentGrid.pose.position.x, gridClient.currentGrid.pose.position.y); // ขยับจุดกึ่งกลางหน้าจอให้ตรงกับแผนที่จริง
+                    viewer.scaleToDimensions(gridClient.currentGrid.width, gridClient.currentGrid.height); // ปรับสเกลหน้าจอ
+                    viewer.shift(gridClient.currentGrid.pose.position.x, gridClient.currentGrid.pose.position.y); // ขยับจุดกึ่งกลาง
                 });
 
                 // ดักจับเหตุการณ์เวลาผู้ใช้เอาเมาส์ "คลิก" ลงบนพื้นที่แผนที่
                 viewer.scene.addEventListener('stagemousedown', function(event) { 
                     if (taskQueue.length >= MAX_TASKS) { // เช็กว่าถ้าคิวงานเต็ม 4 จุดแล้ว
-                        alert('คิวเต็มแล้วครับ! (รับได้สูงสุด 4 จุด)'); // เด้งเตือนว่ารับเพิ่มไม่ได้แล้ว
+                        alert('คิวเต็มแล้วครับ! (รับได้สูงสุด 4 จุด)'); // เด้งเตือน
                         return; // หยุดทำงาน ไม่บันทึกจุดใหม่
                     }
 
-                    const pos = viewer.scene.globalToRos(event.stageX, event.stageY); // แปลงพิกัดพิกเซลบนจอ (X, Y) ให้เป็นพิกัดจริงของ ROS
+                    const pos = viewer.scene.globalToRos(event.stageX, event.stageY); // แปลงพิกัดพิกเซลบนจอให้เป็นพิกัดจริงของ ROS
                     
                     taskQueue.push({ // นำพิกัดใหม่ ดันเข้าไปเก็บในอะเรย์คิวงาน
                         x: pos.x.toFixed(2), // ปัดทศนิยมแกน X ให้เหลือ 2 ตำแหน่ง
                         y: pos.y.toFixed(2)  // ปัดทศนิยมแกน Y ให้เหลือ 2 ตำแหน่ง
                     });
 
-                    updateQueueDisplay();  // เรียกฟังก์ชันอัปเดตหน้าจอเพื่อโชว์รายการคิวใหม่
+                    updateQueueDisplay();  // เรียกฟังก์ชันอัปเดตหน้าจอเพื่อโชว์รายการคิว
                 }); // ปิดการจับคลิก
             }
         } // ปิดฟังก์ชัน initMap
@@ -233,85 +275,85 @@
         // ฟังก์ชันอัปเดตข้อความรายการคิวที่กล่องขวาบน
         function updateQueueDisplay() { 
             const queueList = document.getElementById('queueList'); // ค้นหากล่องรายการคิว
-            queueList.innerHTML = ''; // ล้างข้อความเก่าในกล่องทิ้งก่อน
+            queueList.innerHTML = ''; // ล้างข้อความเก่าทิ้งก่อน
 
-            if (taskQueue.length === 0) { // ถ้าตอนนี้ไม่มีคิวเลย (คิวว่าง)
+            if (taskQueue.length === 0) { // ถ้าไม่มีคิว
                 queueList.innerHTML = '<li>ยังไม่มีคิวงาน...</li>'; // โชว์ข้อความว่ายังไม่มีคิว
                 return; // หยุดการทำงาน
             }
 
             taskQueue.forEach((task, index) => { // วนลูปตามจำนวนคิวงานที่มีอยู่
-                const li = document.createElement('li'); // สร้างแท็กหัวข้อย่อย (list) ขึ้นมาใหม่
-                li.innerHTML = `📍 จุดที่ ${index + 1} : ( X: ${task.x}, Y: ${task.y} )`; // พิมพ์ข้อความบอกลำดับ และพิกัด
-                queueList.appendChild(li); // ยัดหัวข้อย่อยนี้เข้าไปในกล่องแสดงผล
+                const li = document.createElement('li'); // สร้างแท็กหัวข้อย่อย 
+                li.innerHTML = `📍 จุดที่ ${index + 1} : ( X: ${task.x}, Y: ${task.y} )`; // พิมพ์ข้อความบอกลำดับ
+                queueList.appendChild(li); // ยัดหัวข้อย่อยเข้าไปในกล่อง
             });
         }
 
-        // ฟังก์ชันกวาดล้างคิวงาน (กดเมื่อต้องการรีเซ็ต)
+        // ฟังก์ชันกวาดล้างคิวงาน 
         function clearQueue() { 
-            taskQueue = []; // ล้างข้อมูลในอะเรย์ให้เป็นหน้ากระดาษเปล่า
-            updateQueueDisplay(); // สั่งให้อัปเดตกล่องข้อความขวาบนให้ว่างเปล่าตาม
+            taskQueue = []; // ล้างข้อมูลในอะเรย์
+            updateQueueDisplay(); // สั่งให้อัปเดตกล่องข้อความ
             
-            let markers = document.querySelectorAll('.map-marker'); // ค้นหาจุดวงกลมสีแดงที่เคยปักไว้บนจอทั้งหมด
-            markers.forEach(marker => marker.remove()); // วนลูปลบจุดแดงพวกนั้นทิ้งออกจากจอทีละอัน
+            let markers = document.querySelectorAll('.map-marker'); // ค้นหาจุดวงกลมสีแดงบนจอทั้งหมด
+            markers.forEach(marker => marker.remove()); // วนลูปลบจุดแดงทิ้งทีละอัน
         }
 
         // ---------------------------------------------------------
         // ระบบขับเคลื่อนอัตโนมัติ (Nav2 Goal)
         // ---------------------------------------------------------
         
-        // 1. สร้างช่องทาง (Topic) สำหรับส่งเป้าหมายการเดินทาง
+        // 1. สร้างช่องทางส่งเป้าหมายการเดินทาง
         const goalTopic = new ROSLIB.Topic({ 
             ros: ros, // ใช้ ROS ตัวเดิม
-            name: '/goal_pose', // ส่งข้อมูลไปที่ Topic ชื่อ /goal_pose (Nav2 จะรอฟังอยู่ที่นี่)
-            messageType: 'geometry_msgs/msg/PoseStamped' // รูปแบบข้อมูล เป็นพิกัด 3 มิติพร้อมเวลา (PoseStamped)
+            name: '/goal_pose', // ส่งข้อมูลไปที่ Topic ชื่อ /goal_pose
+            messageType: 'geometry_msgs/msg/PoseStamped' // รูปแบบข้อมูล
         });
 
         // 2. ฟังก์ชันสั่งรถวิ่ง (ทำงานเมื่อกดปุ่ม "เริ่มส่งของ")
         function startTaskQueue() { 
-            if (typeof taskQueue === 'undefined' || taskQueue.length === 0) { // ตรวจสอบว่าถ้ายังไม่ได้คลิกแผนที่เลย
-                alert("กรุณาคลิกเลือกพิกัดบนแผนที่ก่อนครับ!"); // เตือนให้ผู้ใช้ไปคลิกแผนที่ก่อน
-                return; // หยุดทำงาน ไม่ส่งคำสั่ง
+            if (typeof taskQueue === 'undefined' || taskQueue.length === 0) { // ตรวจสอบว่ามีคิวหรือยัง
+                alert("กรุณาคลิกเลือกพิกัดบนแผนที่ก่อนครับ!"); // เตือนผู้ใช้
+                return; // หยุดทำงาน 
             }
 
-            const target = taskQueue[0]; // (ทดสอบเบื้องต้น) ดึงแค่จุดแรกสุดในคิวงานออกมาใช้จุดเดียวก่อน
-            console.log(`🚀 กำลังส่งคำสั่งไปเป้าหมาย: X=${target.x}, Y=${target.y}`); // ปรินต์ล็อกไว้ตรวจสอบ
+            const target = taskQueue[0]; // ดึงเป้าหมายแรกออกมา
+            console.log(`🚀 กำลังส่งคำสั่งไปเป้าหมาย: X=${target.x}, Y=${target.y}`); // ปรินต์ล็อก
 
             // 3. แพ็กข้อมูลพิกัด เพื่อส่งให้ Nav2
             const poseMsg = new ROSLIB.Message({ 
-                header: { frame_id: 'map' }, // ตั้งค่าโลกอ้างอิงให้เป็น 'map' เพื่อให้พิกัดตรงกัน
+                header: { frame_id: 'map' }, // โลกอ้างอิงเป็น 'map'
                 pose: {
-                    position: { x: parseFloat(target.x), y: parseFloat(target.y), z: 0.0 }, // กำหนดเป้าหมายแกน x, y ส่วนแกน z เป็น 0 (รถไม่บิน)
-                    orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } // ตั้งให้รถหันหน้าไปทิศเริ่มต้นเสมอตอนไปถึงจุดหมาย
+                    position: { x: parseFloat(target.x), y: parseFloat(target.y), z: 0.0 }, // เป้าหมายแกน x, y
+                    orientation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 } // ตั้งให้รถหันหน้าตรง
                 }
             });
 
-            // 4. ยิงข้อมูลเป้าหมายทะลุเข้าสมองระบบนำทาง (Nav2) ทันที
+            // 4. ยิงข้อมูลเป้าหมายทะลุเข้าสมองระบบนำทาง
             goalTopic.publish(poseMsg); // ส่งคำสั่ง!
             
-            alert(`ส่งพิกัด (X: ${target.x}, Y: ${target.y}) สำเร็จ! หันไปดูล้อรถใน Gazebo ได้เลยครับ`); // เด้งบอกผู้ใช้ว่าส่งข้อมูลสำเร็จ
+            alert(`ส่งพิกัด (X: ${target.x}, Y: ${target.y}) สำเร็จ! หันไปดูล้อรถใน Gazebo ได้เลยครับ`); // เด้งบอก
             
-            if (typeof clearQueue === 'function') { clearQueue(); } // พอยิงคำสั่งแล้ว ให้ล้างคิวทิ้งเตรียมรับงานใหม่
+            if (typeof clearQueue === 'function') { clearQueue(); } // ล้างคิวทิ้งเตรียมรับงานใหม่
         }
 
         // ---------------------------------------------------------
         // ระบบวาดจุดมาร์คสีแดงเวลากดคลิกแผนที่บนเว็บ
         // ---------------------------------------------------------
-        document.getElementById('map-container').addEventListener('click', function(event) { // ดักจับเหตุการณ์เวลาผู้ใช้คลิกเมาส์ลงบนกล่องแผนที่
+        document.getElementById('map-container').addEventListener('click', function(event) { // ดักจับเหตุการณ์คลิก
             
-            let currentMarkers = document.querySelectorAll('.map-marker'); // ค้นหาว่าตอนนี้มีจุดแดงบนจอกี่จุดแล้ว
+            let currentMarkers = document.querySelectorAll('.map-marker'); // ค้นหาว่ามีจุดแดงกี่จุดแล้ว
             
-            if (currentMarkers.length >= 4) return; // ถ้ามีจุดแดงครบ 4 จุดแล้ว ให้หยุดวาดเพิ่มทันที (ป้องกันกดรัวเกินขีดจำกัด)
+            if (currentMarkers.length >= 4) return; // ถ้าครบ 4 จุด ให้หยุดวาดเพิ่มทันที
 
-            let marker = document.createElement('div'); // สร้างกรอบ (div) เปล่าๆ ขึ้นมาในอากาศ
-            marker.className = 'map-marker'; // แปะคลาส map-marker เพื่อให้มันดึง CSS จุดวงกลมสีแดงมาแต่งตัว
+            let marker = document.createElement('div'); // สร้างกรอบ (div) เปล่า
+            marker.className = 'map-marker'; // แปะคลาส map-marker เพื่อให้มันเป็นจุดสีแดง
             
-            let rect = this.getBoundingClientRect(); // วัดขนาดและตำแหน่งของกล่องแผนที่เทียบกับขอบจอ
-            marker.style.left = (event.clientX - rect.left) + 'px'; // คำนวณแกน X: เอาตำแหน่งเมาส์ ลบกับขอบกล่องด้านซ้าย เพื่อให้จุดตรงเป๊ะ
-            marker.style.top = (event.clientY - rect.top) + 'px'; // คำนวณแกน Y: เอาตำแหน่งเมาส์ ลบกับขอบกล่องด้านบน
+            let rect = this.getBoundingClientRect(); // วัดขนาดตำแหน่งกล่องแผนที่
+            marker.style.left = (event.clientX - rect.left) + 'px'; // คำนวณตำแหน่งเมาส์ แกน X
+            marker.style.top = (event.clientY - rect.top) + 'px'; // คำนวณตำแหน่งเมาส์ แกน Y
             
-            this.appendChild(marker); // เอาจุดสีแดงที่สร้างเสร็จแล้ว แปะลงไปบนกล่องแผนที่ให้มองเห็นได้
-        }); // ปิดเหตุการณ์คลิกวาดจุด
+            this.appendChild(marker); // เอาจุดสีแดงแปะลงบนแผนที่
+        }); // ปิดเหตุการณ์คลิก
     </script> <!-- ปิดแท็ก JavaScript -->
 </body> <!-- ปิดแท็กเนื้อหาหลักเว็บ -->
 </html> <!-- จบไฟล์สมบูรณ์! -->
